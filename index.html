@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#b91c1c"><link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png"><title>Gestão Karatê</title>
+<style>
+:root{--bg:#f6f5f3;--card:#fff;--tx:#1c1917;--mu:#78716c;--bd:#e7e5e4;--ac:#b91c1c;--ok:#15803d;--okb:#dcfce7;--pe:#a16207;--peb:#fef3c7;--atb:#fee2e2}
+@media(prefers-color-scheme:dark){:root{--bg:#171412;--card:#221e1b;--tx:#f5f5f4;--mu:#a8a29e;--bd:#3a3531;--ac:#ef4444;--ok:#4ade80;--okb:#14351f;--pe:#facc15;--peb:#3a3010;--atb:#3f1818}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(76px + env(safe-area-inset-bottom))}
+header{background:var(--ac);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+main{padding:12px;max-width:640px;margin:auto}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card,.item{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px}.item{margin-bottom:8px;border-radius:12px;padding:12px}
+.k,small{color:var(--mu);font-size:13px}.v{font-size:24px;font-weight:700}.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.b{font-size:12px;font-weight:600;border-radius:99px;padding:3px 9px}.paga{background:var(--okb);color:var(--ok)}.pendente{background:var(--peb);color:var(--pe)}.atrasada{background:var(--atb);color:var(--ac)}.cancelada,.inativo{background:var(--bd);color:var(--mu)}
+button{font:inherit;border:0;border-radius:10px;padding:10px 14px;background:var(--ac);color:#fff;font-weight:600}button.s{background:transparent;color:var(--ac);border:1px solid var(--ac)}button.sm{padding:7px 11px;font-size:14px}
+input,select{font:inherit;width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);margin:4px 0 10px}label{font-size:13px;color:var(--mu)}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:10px 0}.chip{background:var(--card);color:var(--tx);border:1px solid var(--bd);padding:7px 12px;font-size:14px}.chip.on{background:var(--ac);color:#fff}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--bd);display:flex;padding-bottom:env(safe-area-inset-bottom)}nav button{flex:1;background:none;color:var(--mu);border-radius:0;font-size:12px;padding:10px 2px}nav button.on{color:var(--ac)}
+#m{display:none;position:fixed;inset:0;background:#0009;z-index:10;align-items:flex-end;justify-content:center}#m.show{display:flex}
+.sheet{background:var(--card);width:100%;max-width:640px;max-height:90%;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}h2{font-size:17px;margin:14px 0 8px}
+</style></head><body>
+<header><b>🥋 Gestão Karatê</b><button class="s sm" id="out" style="display:none;color:#fff;border-color:#fff" onclick="sair()">Sair</button></header>
+<main id="app">Carregando…</main><div id="m" onclick="if(event.target===this)fechar()"><div class="sheet" id="sh"></div></div><nav id="nav"></nav>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script>
+const sb=supabase.createClient('https://hagmwgpexyfzpjhxybcv.supabase.co','sb_publishable_ESlJOVx_Do1y0fVZRTQliQ_U8phst1i');
+const $=s=>document.querySelector(s),pad=n=>String(n).padStart(2,'0'),iso=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const HOJE=iso(new Date()),MES0=HOJE.slice(0,7),R=n=>Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),D=s=>s?String(s).slice(0,10).split('-').reverse().join('/'):'';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MN='janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro'.split(' '),ml=m=>MN[m.split('-')[1]-1]+' de '+m.split('-')[0];
+const shift=(m,k)=>{const[y,o]=m.split('-').map(Number),d=new Date(y,o-1+k,1);return d.getFullYear()+'-'+pad(d.getMonth()+1)};const ldom=m=>{const[y,o]=m.split('-').map(Number);return new Date(y,o,0).getDate()};
+let S={alunos:[],mens:[],pag:[],aba:'painel',mes:MES0,filtro:'todas',busca:''};
+const mk=c=>c.ano+'-'+pad(c.mes),al=id=>S.alunos.find(a=>a.id==id)||{nome:'?'};
+const pv=c=>S.pag.filter(p=>p.mensalidade_id==c.id).reduce((s,p)=>s+Number(p.valor),0);
+const st=c=>c.status=='paga'?'paga':c.status=='cancelada'?'cancelada':(c.vencimento<HOJE?'atrasada':'pendente');
+const err=e=>alert('Erro: '+(e.message||e));
+async function init(){const{data}=await sb.auth.getSession();data.session?abrir():login()}
+function login(m){$('#out').style.display='none';$('#nav').innerHTML='';$('#app').innerHTML=`<div class="card"><h2 style="margin-top:0">Entrar</h2>${m?`<p style="color:var(--ac)">${esc(m)}</p>`:''}<label>E-mail</label><input id="e" type="email" autocomplete="username"><label>Senha</label><input id="s" type="password" autocomplete="current-password"><button style="width:100%" onclick="entrar()">Entrar</button></div>`}
+async function entrar(){const{error}=await sb.auth.signInWithPassword({email:$('#e').value.trim(),password:$('#s').value});if(error)return login('E-mail ou senha incorretos.');abrir()}
+async function sair(){await sb.auth.signOut();S={alunos:[],mens:[],pag:[],aba:'painel',mes:MES0,filtro:'todas',busca:''};login()}
+async function abrir(){$('#out').style.display='';const{data,error}=await sb.rpc('eh_admin');if(error||!data){await sb.auth.signOut();return login('Este usuário não é administrador.')}await carregar();draw()}
+async function carregar(){const[a,m,p]=await Promise.all([sb.from('alunos').select('*').order('nome'),sb.from('mensalidades').select('*'),sb.from('pagamentos').select('mensalidade_id,valor').is('estornado_em',null)]);const e=a.error||m.error||p.error;if(e)return err(e);S.alunos=a.data;S.mens=m.data;S.pag=p.data}
+function draw(){const T=[['painel','📊','Painel'],['alunos','👥','Alunos'],['mens','💰','Mensalidades'],['inad','⚠️','Inadimplentes']];
+$('#nav').innerHTML=T.map(t=>`<button class="${S.aba==t[0]?'on':''}" onclick="go('${t[0]}')"><div style="font-size:20px">${t[1]}</div>${t[2]}</button>`).join('');$('#app').innerHTML=({painel,alunos,mens,inad})[S.aba]()}
+const go=a=>{S.aba=a;draw();scrollTo(0,0)},mm=k=>{S.mes=shift(S.mes,k);draw()};
+const mesSel=()=>`<div class="row" style="margin-bottom:10px"><button class="s sm" onclick="mm(-1)">‹</button><b>${ml(S.mes)}</b><button class="s sm" onclick="mm(1)">›</button></div>`;
+const doMes=()=>S.mens.filter(c=>mk(c)==S.mes),soma=l=>l.reduce((s,c)=>s+Number(c.valor),0);
+function painel(){const L=doMes(),pg=L.filter(c=>c.status=='paga'),pe=L.filter(c=>st(c)=='pendente'),at=S.mens.filter(c=>st(c)=='atrasada');
+return `${mesSel()}<div class="grid"><div class="card"><div class="k">Alunos ativos</div><div class="v">${S.alunos.filter(a=>a.ativo).length}</div></div>
+<div class="card"><div class="k">Recebido no mês</div><div class="v" style="color:var(--ok)">${R(pg.reduce((s,c)=>s+pv(c),0))}</div><small>${pg.length} paga(s)</small></div>
+<div class="card"><div class="k">Pendentes</div><div class="v" style="color:var(--pe)">${pe.length}</div><small>${R(soma(pe))}</small></div>
+<div class="card"><div class="k">Atrasadas (todas)</div><div class="v" style="color:var(--ac)">${at.length}</div><small>${R(soma(at))}</small></div></div>`}
+function alunos(){return `<div class="row"><input placeholder="Buscar aluno" value="${esc(S.busca)}" oninput="S.busca=this.value;$('#lst').innerHTML=lst()" style="margin:0"><button onclick="editar(null)">+ Novo</button></div><div style="margin-top:10px" id="lst">${lst()}</div>`}
+const lst=()=>S.alunos.filter(a=>a.nome.toLowerCase().includes(S.busca.toLowerCase())).map(a=>`<div class="item" onclick="ver('${a.id}')"><div class="row"><b>${esc(a.nome)}</b><span class="b ${a.ativo?'paga':'inativo'}">${a.ativo?'Ativo':'Inativo'}</span></div><small>${R(a.valor_mensalidade)} • vence dia ${a.dia_vencimento}${a.menor_de_idade?' • menor de idade':''}</small></div>`).join('')||'<p class="k">Nenhum aluno. Toque em “+ Novo”.</p>';
+function mens(){const L=doMes().filter(c=>S.filtro=='todas'||st(c)+'s'==S.filtro||(S.filtro=='pagas'&&st(c)=='paga')).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
+return `${mesSel()}<button style="width:100%" onclick="gerar()">Gerar mensalidades do mês</button><div class="chips">${['todas','pagas','pendentes','atrasadas'].map(f=>`<button class="chip ${S.filtro==f?'on':''}" onclick="S.filtro='${f}';draw()">${f[0].toUpperCase()+f.slice(1)}</button>`).join('')}</div>
+${L.map(c=>{const s=st(c);return `<div class="item"><div class="row"><b>${esc(al(c.aluno_id).nome)}</b><span class="b ${s}">${s[0].toUpperCase()+s.slice(1)}</span></div><small>Vence ${D(c.vencimento)} • ${R(c.valor)}${s=='paga'?' • pago '+R(pv(c)):''}</small>
+<div class="row" style="margin-top:8px;justify-content:flex-start">${s=='paga'?`<button class="s sm" onclick="estornar('${c.id}')">Estornar</button>`:s=='cancelada'?'':`<button class="sm" onclick="pagar('${c.id}')">Registrar pagamento</button><button class="s sm" onclick="zap('${c.id}')">WhatsApp</button>`}</div></div>`}).join('')||'<p class="k">Nada neste filtro.</p>'}`}
+function inad(){const at=S.mens.filter(c=>st(c)=='atrasada'),por={};at.forEach(c=>(por[c.aluno_id]=por[c.aluno_id]||[]).push(c));
+return `<div class="card"><div class="k">Total em aberto (atrasado)</div><div class="v">${R(soma(at))}</div></div><h2>Inadimplentes</h2>${Object.keys(por).map(id=>`<div class="item" onclick="ver('${id}')"><div class="row"><b>${esc(al(id).nome)}</b><b style="color:var(--ac)">${R(soma(por[id]))}</b></div><small>${por[id].length} mensalidade(s): ${por[id].map(c=>pad(c.mes)+'/'+c.ano).join(', ')}</small></div>`).join('')||'<p class="k">Nenhum inadimplente 🎉</p>'}`}
+function modal(h){$('#sh').innerHTML=h;$('#m').classList.add('show')}const fechar=()=>$('#m').classList.remove('show');
+function ver(id){const a=al(id),H=S.mens.filter(c=>c.aluno_id==id).sort((x,y)=>mk(y).localeCompare(mk(x)));
+modal(`<div class="row"><b style="font-size:18px">${esc(a.nome)}</b><button class="s sm" onclick="fechar()">Fechar</button></div><p class="k">${R(a.valor_mensalidade)} • vence dia ${a.dia_vencimento} • entrada ${D(a.data_entrada)}<br>WhatsApp: ${esc(a.telefone_whatsapp||'-')}${a.menor_de_idade?'<br>Responsável: '+esc(a.nome_responsavel)+' • '+esc(a.telefone_responsavel||''):''}</p><button class="s sm" onclick="editar('${id}')">Editar cadastro</button><h2>Histórico financeiro</h2>
+${H.map(c=>`<div class="item row"><span>${ml(mk(c))}<br><small>${st(c)=='paga'?'pago '+R(pv(c))+' em '+D(c.data_pagamento):'vence '+D(c.vencimento)+' • '+R(c.valor)}</small></span><span class="b ${st(c)}">${st(c)}</span></div>`).join('')||'<p class="k">Sem mensalidades.</p>'}`)}
+function editar(id){const a=id?al(id):{nome:'',menor_de_idade:false,nome_responsavel:'',telefone_responsavel:'',telefone_whatsapp:'',valor_mensalidade:120,dia_vencimento:10,data_entrada:HOJE,ativo:true};
+modal(`<b style="font-size:18px">${id?'Editar':'Novo'} aluno</b><br><br><label>Nome completo</label><input id="f1" value="${esc(a.nome)}"><label><input type="checkbox" id="f2" ${a.menor_de_idade?'checked':''} style="width:auto;margin:0 6px 0 0" onchange="$('#rp').style.display=this.checked?'block':'none'">Menor de idade</label>
+<div id="rp" style="display:${a.menor_de_idade?'block':'none'};margin-top:8px"><label>Nome do responsável</label><input id="f3" value="${esc(a.nome_responsavel)}"><label>Telefone do responsável</label><input id="f4" type="tel" value="${esc(a.telefone_responsavel)}"></div>
+<label>Telefone com WhatsApp</label><input id="f5" type="tel" value="${esc(a.telefone_whatsapp)}"><label>Valor da mensalidade (R$)</label><input id="f6" type="number" step="0.01" value="${a.valor_mensalidade}"><label>Dia de vencimento (1 a 28)</label><input id="f7" type="number" min="1" max="28" value="${a.dia_vencimento}">
+<label>Data de entrada</label><input id="f8" type="date" value="${a.data_entrada}"><label>Situação</label><select id="f9"><option value="1" ${a.ativo?'selected':''}>Ativo</option><option value="0" ${a.ativo?'':'selected'}>Inativo</option></select><div class="row"><button class="s" onclick="fechar()">Cancelar</button><button onclick="salvarAluno('${id||''}')">Salvar</button></div>`)}
+async function salvarAluno(id){const o={nome:$('#f1').value.trim(),menor_de_idade:$('#f2').checked,nome_responsavel:$('#f3').value.trim()||null,telefone_responsavel:$('#f4').value.trim()||null,telefone_whatsapp:$('#f5').value.trim()||null,valor_mensalidade:+$('#f6').value,dia_vencimento:Math.min(28,Math.max(1,+$('#f7').value||1)),data_entrada:$('#f8').value,ativo:$('#f9').value=='1'};
+if(!o.nome||!(o.valor_mensalidade>=0)||!o.data_entrada)return alert('Preencha nome, valor e data de entrada.');if(o.menor_de_idade&&!o.nome_responsavel)return alert('Informe o responsável.');
+const r=id?await sb.from('alunos').update(o).eq('id',id):await sb.from('alunos').insert(o);if(r.error)return err(r.error);await carregar();fechar();draw()}
+async function gerar(){const m=S.mes,[y,mo]=m.split('-').map(Number),rows=S.alunos.filter(a=>a.ativo&&a.data_entrada.slice(0,7)<=m&&!S.mens.some(c=>c.aluno_id==a.id&&c.ano==y&&c.mes==mo)).map(a=>({aluno_id:a.id,ano:y,mes:mo,valor:a.valor_mensalidade,vencimento:m+'-'+pad(Math.min(a.dia_vencimento,ldom(m))),status:'pendente'}));
+if(!rows.length)return alert('Nenhuma nova: todas as mensalidades deste mês já existem.');const r=await sb.from('mensalidades').upsert(rows,{onConflict:'aluno_id,ano,mes',ignoreDuplicates:true});if(r.error)return err(r.error);await carregar();draw();alert(rows.length+' mensalidade(s) gerada(s).')}
+function pagar(id){const c=S.mens.find(x=>x.id==id);modal(`<b style="font-size:18px">Registrar pagamento</b><p class="k">${esc(al(c.aluno_id).nome)} • ${ml(mk(c))}<br>Pagamento manual (dinheiro, Pix direto etc.)</p><label>Data do pagamento</label><input id="p1" type="date" value="${HOJE}"><label>Valor recebido (R$)</label><input id="p2" type="number" step="0.01" value="${c.valor}"><div class="row"><button class="s" onclick="fechar()">Cancelar</button><button id="pb" onclick="confPag('${id}')">Confirmar</button></div>`)}
+async function confPag(id){const v=+$('#p2').value,d=$('#p1').value;if(!(v>0)||!d)return alert('Informe data e valor.');$('#pb').disabled=true;const ts=new Date(d+'T12:00:00').toISOString();
+const a=await sb.from('pagamentos').insert({mensalidade_id:id,valor:v,data_pagamento:ts,metodo:'manual'});if(a.error){$('#pb').disabled=false;return err(a.error)}
+const b=await sb.from('mensalidades').update({status:'paga',data_pagamento:ts}).eq('id',id);if(b.error)err(b.error);await carregar();fechar();draw()}
+async function estornar(id){const mo=prompt('Motivo do estorno:');if(!mo)return;const now=new Date().toISOString();
+const a=await sb.from('pagamentos').update({estornado_em:now,motivo_estorno:mo}).eq('mensalidade_id',id).is('estornado_em',null);if(a.error)return err(a.error);
+const b=await sb.from('mensalidades').update({status:'pendente',data_pagamento:null}).eq('id',id);if(b.error)err(b.error);await carregar();draw()}
+function zap(id){const c=S.mens.find(x=>x.id==id),a=al(c.aluno_id);let n=String((a.menor_de_idade?a.telefone_responsavel:a.telefone_whatsapp)||'').replace(/\D/g,'');if(!n)return alert('Aluno sem telefone cadastrado.');if(n.length<=11)n='55'+n;
+open('https://wa.me/'+n+'?text='+encodeURIComponent(`Olá! Lembrete da mensalidade de ${a.nome} (${R(c.valor)}), vencimento em ${D(c.vencimento)}.`),'_blank')}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');init();
+</script></body></html>
